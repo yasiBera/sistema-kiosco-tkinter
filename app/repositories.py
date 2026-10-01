@@ -2,6 +2,7 @@ from typing import Iterable
 
 from app.config import LOW_STOCK_LIMIT
 from app.database import Database
+from app.utils import calculate_price_with_markup
 
 
 class ProductRepository:
@@ -22,7 +23,7 @@ class ProductRepository:
         with self.database.read() as connection:
             return connection.execute(
                 f"""
-                SELECT id, code, name, price_cents, stock, active
+                SELECT id, code, name, price_cents, cost_cents, markup_percent, stock, active
                 FROM products {where}
                 ORDER BY name COLLATE NOCASE
                 """,
@@ -35,28 +36,54 @@ class ProductRepository:
                 "SELECT * FROM products WHERE id = ?", (product_id,)
             ).fetchone()
 
-    def create(self, code: str, name: str, price_cents: int, stock: int) -> int:
+    def create(
+        self, code: str, name: str, cost_cents: int, markup_percent: int, stock: int
+    ) -> int:
+        normalized_code = code.strip().upper()
+        price_cents, _profit_cents = calculate_price_with_markup(cost_cents, markup_percent)
         with self.database.transaction() as connection:
+            duplicate = connection.execute(
+                "SELECT 1 FROM products WHERE UPPER(code) = ?", (normalized_code,)
+            ).fetchone()
+            if duplicate:
+                raise ValueError("Ya existe un producto con ese código, sin distinguir mayúsculas.")
+
             cursor = connection.execute(
                 """
-                INSERT INTO products(code, name, price_cents, stock)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO products(code, name, price_cents, cost_cents, markup_percent, stock)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (code.strip(), name.strip(), price_cents, stock),
+                (normalized_code, name.strip(), price_cents, cost_cents, markup_percent, stock),
             )
             return int(cursor.lastrowid)
 
     def update(
-        self, product_id: int, code: str, name: str, price_cents: int, stock: int
+        self,
+        product_id: int,
+        code: str,
+        name: str,
+        cost_cents: int,
+        markup_percent: int,
+        stock: int,
     ) -> None:
+        normalized_code = code.strip().upper()
+        price_cents, _profit_cents = calculate_price_with_markup(cost_cents, markup_percent)
         with self.database.transaction() as connection:
+            duplicate = connection.execute(
+                "SELECT 1 FROM products WHERE UPPER(code) = ? AND id != ?",
+                (normalized_code, product_id),
+            ).fetchone()
+            if duplicate:
+                raise ValueError("Ya existe un producto con ese código, sin distinguir mayúsculas.")
+
             connection.execute(
                 """
                 UPDATE products
-                SET code = ?, name = ?, price_cents = ?, stock = ?
+                SET code = ?, name = ?, price_cents = ?, cost_cents = ?,
+                    markup_percent = ?, stock = ?
                 WHERE id = ?
                 """,
-                (code.strip(), name.strip(), price_cents, stock, product_id),
+                (normalized_code, name.strip(), price_cents, cost_cents, markup_percent, stock, product_id),
             )
 
     def set_active(self, product_id: int, active: bool) -> None:

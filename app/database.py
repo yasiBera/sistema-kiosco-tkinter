@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS products (
     code TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     price_cents INTEGER NOT NULL CHECK(price_cents >= 0),
+    cost_cents INTEGER NOT NULL DEFAULT 0 CHECK(cost_cents >= 0),
+    markup_percent INTEGER NOT NULL DEFAULT 0 CHECK(markup_percent >= 0),
     stock INTEGER NOT NULL DEFAULT 0 CHECK(stock >= 0),
     active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -73,21 +75,34 @@ class Database:
     def initialize(self) -> None:
         with self.transaction() as connection:
             connection.executescript(SCHEMA)
+            columns = {row["name"] for row in connection.execute("PRAGMA table_info(products)")}
+            if "cost_cents" not in columns:
+                connection.execute(
+                    "ALTER TABLE products ADD COLUMN cost_cents INTEGER NOT NULL DEFAULT 0"
+                )
+                # Preserve current sale prices for products already in the database.
+                connection.execute("UPDATE products SET cost_cents = price_cents")
+            if "markup_percent" not in columns:
+                connection.execute(
+                    "ALTER TABLE products ADD COLUMN markup_percent INTEGER NOT NULL DEFAULT 0"
+                )
 
     def seed_demo_products(self) -> int:
+        # Valores ficticios de costo y recargo para ilustrar el cálculo.
         demo = [
-            ("779001", "Agua mineral 500 ml", 100000, 12),
-            ("779002", "Gaseosa cola 500 ml", 180000, 10),
-            ("779003", "Alfajor de chocolate", 90000, 20),
-            ("779004", "Papas fritas", 150000, 8),
-            ("779005", "Caramelos", 15000, 40),
+            ("779001", "Agua mineral 500 ml", 80000, 25, 100000, 12),
+            ("779002", "Gaseosa cola 500 ml", 150000, 20, 180000, 10),
+            ("779003", "Alfajor de chocolate", 75000, 20, 90000, 20),
+            ("779004", "Papas fritas", 120000, 25, 150000, 8),
+            ("779005", "Caramelos", 10000, 50, 15000, 40),
         ]
         with self.transaction() as connection:
             before = connection.total_changes
             connection.executemany(
                 """
-                INSERT OR IGNORE INTO products(code, name, price_cents, stock)
-                VALUES (?, ?, ?, ?)
+                INSERT OR IGNORE INTO products(
+                    code, name, cost_cents, markup_percent, price_cents, stock
+                ) VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 demo,
             )
