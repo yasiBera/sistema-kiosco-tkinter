@@ -3,7 +3,12 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from app.repositories import ProductRepository
-from app.utils import format_currency, parse_price_to_cents
+from app.utils import (
+    calculate_price_with_markup,
+    format_currency,
+    parse_markup_percent,
+    parse_price_to_cents,
+)
 
 
 class ProductsView(ttk.Frame):
@@ -11,12 +16,11 @@ class ProductsView(ttk.Frame):
         super().__init__(parent, padding=24)
         self.products = products
         self.on_change = on_change
-        self.selected_id: int | None = None
 
         ttk.Label(self, text="Administrar productos", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             self,
-            text="Alta, modificación de precios y control de stock",
+            text="Cargá el costo y el recargo para calcular el precio de venta y la ganancia.",
             style="Subtitle.TLabel",
         ).pack(anchor="w", pady=(2, 16))
 
@@ -30,16 +34,19 @@ class ProductsView(ttk.Frame):
         ttk.Button(toolbar, text="Nuevo producto", style="Primary.TButton",
                    command=self.open_form).pack(side="right")
 
-        columns = ("code", "name", "price", "stock", "status")
+        columns = ("code", "name", "cost", "markup", "price", "profit", "stock", "status")
         self.tree = ttk.Treeview(self, columns=columns, show="headings", selectmode="browse")
         headings = {
-            "code": "Código", "name": "Producto", "price": "Precio",
-            "stock": "Stock", "status": "Estado"
+            "code": "Código", "name": "Producto", "cost": "Costo",
+            "markup": "Recargo", "price": "Venta", "profit": "Ganancia",
+            "stock": "Stock", "status": "Estado",
         }
-        widths = {"code": 120, "name": 360, "price": 130, "stock": 90, "status": 100}
+        widths = {"code": 90, "name": 210, "cost": 105, "markup": 75,
+                  "price": 105, "profit": 110, "stock": 70, "status": 80}
         for column in columns:
             self.tree.heading(column, text=headings[column])
-            self.tree.column(column, width=widths[column], anchor="center" if column != "name" else "w")
+            self.tree.column(column, width=widths[column],
+                             anchor="center" if column != "name" else "w")
         self.tree.pack(fill="both", expand=True)
         self.tree.bind("<Double-1>", lambda _event: self.edit_selected())
 
@@ -52,11 +59,15 @@ class ProductsView(ttk.Frame):
         for item in self.tree.get_children():
             self.tree.delete(item)
         for product in self.products.list_all(self.search_var.get()):
+            profit = product["price_cents"] - product["cost_cents"]
             self.tree.insert(
                 "", "end", iid=str(product["id"]),
                 values=(
                     product["code"], product["name"],
-                    format_currency(product["price_cents"]), product["stock"],
+                    format_currency(product["cost_cents"]),
+                    f"{product['markup_percent']}%",
+                    format_currency(product["price_cents"]),
+                    format_currency(profit), product["stock"],
                     "Activo" if product["active"] else "Inactivo",
                 ),
             )
@@ -94,19 +105,48 @@ class ProductsView(ttk.Frame):
         values = {
             "code": tk.StringVar(value=product["code"] if product else ""),
             "name": tk.StringVar(value=product["name"] if product else ""),
-            "price": tk.StringVar(
-                value=(f"{product['price_cents'] / 100:.2f}" if product else "")
-            ),
-            "stock": tk.StringVar(value=str(product["stock"]) if product else "0"),
+            "cost": tk.StringVar(value=f"{product['cost_cents'] / 100:.2f}" if product else ""),
+            "markup": tk.StringVar(value=str(product["markup_percent"] if product else 30)),
+            "stock": tk.StringVar(value=str(product["stock"] if product else 0)),
         }
-        fields = [("Código", "code"), ("Nombre", "name"), ("Precio", "price"), ("Stock", "stock")]
-        first_entry = None
+        sale_price_var = tk.StringVar(value="—")
+        profit_var = tk.StringVar(value="—")
+        fields = [("Código", "code"), ("Nombre", "name"),
+                  ("Costo de compra", "cost"), ("Recargo sobre costo (%)", "markup")]
+        entries = {}
         for row, (label, key) in enumerate(fields):
             ttk.Label(body, text=label).grid(row=row, column=0, sticky="w", pady=6)
             entry = ttk.Entry(body, textvariable=values[key], width=34)
             entry.grid(row=row, column=1, padx=(14, 0), pady=6)
-            if first_entry is None:
-                first_entry = entry
+            entries[key] = entry
+
+        ttk.Label(body, text="Precio de venta calculado").grid(row=4, column=0, sticky="w", pady=6)
+        ttk.Label(body, textvariable=sale_price_var, style="CardValue.TLabel").grid(
+            row=4, column=1, sticky="w", padx=(14, 0), pady=6
+        )
+        ttk.Label(body, text="Ganancia por unidad").grid(row=5, column=0, sticky="w", pady=6)
+        ttk.Label(body, textvariable=profit_var, style="CardValue.TLabel").grid(
+            row=5, column=1, sticky="w", padx=(14, 0), pady=6
+        )
+        ttk.Label(body, text="Stock inicial").grid(row=6, column=0, sticky="w", pady=6)
+        stock_entry = ttk.Entry(body, textvariable=values["stock"], width=34)
+        stock_entry.grid(row=6, column=1, padx=(14, 0), pady=6)
+
+        def update_calculation(*_args) -> None:
+            try:
+                cost = parse_price_to_cents(values["cost"].get())
+                markup = parse_markup_percent(values["markup"].get())
+                sale_price, profit = calculate_price_with_markup(cost, markup)
+            except ValueError:
+                sale_price_var.set("Completá costo y recargo")
+                profit_var.set("—")
+                return
+            sale_price_var.set(format_currency(sale_price))
+            profit_var.set(format_currency(profit))
+
+        values["cost"].trace_add("write", update_calculation)
+        values["markup"].trace_add("write", update_calculation)
+        update_calculation()
 
         def save() -> None:
             try:
@@ -114,14 +154,15 @@ class ProductsView(ttk.Frame):
                 name = values["name"].get().strip()
                 if not code or not name:
                     raise ValueError("El código y el nombre son obligatorios.")
-                price_cents = parse_price_to_cents(values["price"].get())
+                cost_cents = parse_price_to_cents(values["cost"].get())
+                markup_percent = parse_markup_percent(values["markup"].get())
                 stock = int(values["stock"].get())
                 if stock < 0:
                     raise ValueError("El stock no puede ser negativo.")
                 if product_id:
-                    self.products.update(product_id, code, name, price_cents, stock)
+                    self.products.update(product_id, code, name, cost_cents, markup_percent, stock)
                 else:
-                    self.products.create(code, name, price_cents, stock)
+                    self.products.create(code, name, cost_cents, markup_percent, stock)
             except ValueError as exc:
                 messagebox.showerror("Datos incorrectos", str(exc), parent=window)
                 return
@@ -132,10 +173,9 @@ class ProductsView(ttk.Frame):
             self.on_change()
 
         buttons = ttk.Frame(body)
-        buttons.grid(row=len(fields), column=0, columnspan=2, sticky="e", pady=(16, 0))
+        buttons.grid(row=7, column=0, columnspan=2, sticky="e", pady=(16, 0))
         ttk.Button(buttons, text="Cancelar", command=window.destroy).pack(side="left", padx=6)
         ttk.Button(buttons, text="Guardar", style="Primary.TButton", command=save).pack(side="left")
         window.bind("<Return>", lambda _event: save())
         window.bind("<Escape>", lambda _event: window.destroy())
-        first_entry.focus_set()
-
+        entries["code"].focus_set()
