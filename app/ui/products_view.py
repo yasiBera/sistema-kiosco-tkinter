@@ -20,15 +20,32 @@ class ProductsView(ttk.Frame):
             style="Subtitle.TLabel",
         ).pack(anchor="w", pady=(2, 16))
 
-        toolbar = ttk.Frame(self)
-        toolbar.pack(fill="x", pady=(0, 12))
-        ttk.Label(toolbar, text="Buscar:").pack(side="left")
         self.search_var = tk.StringVar()
-        search = ttk.Entry(toolbar, textvariable=self.search_var, width=35)
-        search.pack(side="left", padx=8)
+        toolbar = ttk.Frame(self, padding=12)
+        toolbar.pack(fill="x", pady=(0, 8))
+        toolbar.columnconfigure(1, weight=1)
+        ttk.Label(toolbar, text="Buscar productos", style="Field.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(toolbar, text="Filtrá por nombre o código", foreground="#68758C").grid(
+            row=1, column=0, sticky="w", pady=(2, 0)
+        )
+        search = ttk.Entry(toolbar, textvariable=self.search_var)
+        search.grid(row=0, column=1, rowspan=2, sticky="ew", padx=12)
         search.bind("<KeyRelease>", lambda _event: self.refresh())
-        ttk.Button(toolbar, text="Nuevo producto", style="Primary.TButton",
-                   command=self.open_form).pack(side="right")
+        ttk.Button(
+            toolbar, text="Nuevo producto", style="Primary.TButton",
+            command=self.open_form,
+        ).grid(row=0, column=2, rowspan=2, sticky="e")
+
+        list_header = ttk.Frame(self)
+        list_header.pack(fill="x", pady=(4, 8))
+        ttk.Label(list_header, text="Listado de productos", style="Section.TLabel").pack(
+            side="left"
+        )
+        ttk.Label(
+            list_header, text="Doble clic para editar", foreground="#68758C"
+        ).pack(side="right")
 
         columns = ("code", "name", "price", "stock", "status")
         self.tree = ttk.Treeview(self, columns=columns, show="headings", selectmode="browse")
@@ -40,18 +57,30 @@ class ProductsView(ttk.Frame):
         for column in columns:
             self.tree.heading(column, text=headings[column])
             self.tree.column(column, width=widths[column], anchor="center" if column != "name" else "w")
-        self.tree.pack(fill="both", expand=True)
+        table_area = ttk.Frame(self)
+        table_area.pack(fill="both", expand=True)
+        table_area.columnconfigure(0, weight=1)
+        table_area.rowconfigure(0, weight=1)
+        self.tree.grid(in_=table_area, row=0, column=0, sticky="nsew")
+        scrollbar = ttk.Scrollbar(table_area, orient="vertical", command=self.tree.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        self.tree.configure(yscrollcommand=scrollbar.set)
         self.tree.bind("<Double-1>", lambda _event: self.edit_selected())
 
         actions = ttk.Frame(self)
-        actions.pack(fill="x", pady=(12, 0))
-        ttk.Button(actions, text="Editar seleccionado", command=self.edit_selected).pack(side="left")
-        ttk.Button(actions, text="Activar / desactivar", command=self.toggle_selected).pack(side="left", padx=8)
+        actions.pack(fill="x", pady=(10, 0))
+        ttk.Button(actions, text="Editar producto", command=self.edit_selected).pack(side="left")
+        ttk.Button(
+            actions, text="Cambiar estado", command=self.toggle_selected
+        ).pack(side="left", padx=8)
+        self.empty_label = ttk.Label(actions, foreground="#68758C")
+        self.empty_label.pack(side="right")
 
     def refresh(self) -> None:
         for item in self.tree.get_children():
             self.tree.delete(item)
-        for product in self.products.list_all(self.search_var.get()):
+        products = self.products.list_all(self.search_var.get())
+        for product in products:
             self.tree.insert(
                 "", "end", iid=str(product["id"]),
                 values=(
@@ -60,11 +89,19 @@ class ProductsView(ttk.Frame):
                     "Activo" if product["active"] else "Inactivo",
                 ),
             )
+        if products:
+            self.empty_label.configure(text=f"{len(products)} productos")
+        elif self.search_var.get().strip():
+            self.empty_label.configure(text="No hay coincidencias para esa búsqueda.")
+        else:
+            self.empty_label.configure(text="Todavía no hay productos cargados.")
 
     def selected_product_id(self) -> int | None:
         selected = self.tree.selection()
         if not selected:
-            messagebox.showwarning("Productos", "Seleccioná un producto.", parent=self)
+            messagebox.showwarning(
+                "Productos", "Seleccioná un producto del listado para continuar.", parent=self
+            )
             return None
         return int(selected[0])
 
