@@ -11,6 +11,7 @@ guardan localmente en SQLite.
 - Activación y desactivación de productos sin borrar su historial.
 - Buscador por nombre o código.
 - Caja con carrito y control de disponibilidad.
+- Validación de cantidades y confirmación con precios y total actualizados.
 - Descuento automático de stock al confirmar una venta.
 - Historial y detalle de las últimas ventas.
 - Base SQLite creada automáticamente al iniciar.
@@ -104,4 +105,3 @@ stock.
 - Trabajar con SQL y transacciones.
 - Usar ramas, commits y Pull Requests.
 - Escribir pruebas antes de integrar cambios.
-

@@ -126,6 +126,12 @@ class PosView(ttk.Frame):
             return
         product_id = int(selected[0])
         product = self.products.get(product_id)
+        if product is None or not product["active"]:
+            messagebox.showerror(
+                "No se pudo agregar", "El producto ya no está disponible.", parent=self
+            )
+            self.refresh_products()
+            return
         current_quantity = self.cart.get(product_id, {}).get("quantity", 0)
         if current_quantity >= product["stock"]:
             messagebox.showwarning("Caja", "No hay más unidades disponibles.", parent=self)
@@ -169,7 +175,25 @@ class PosView(ttk.Frame):
         if not self.cart:
             messagebox.showwarning("Caja", "Agregá al menos un producto.", parent=self)
             return
-        total = sum(item["price_cents"] * item["quantity"] for item in self.cart.values())
+
+        try:
+            preview = self.sales.preview(self.cart.values())
+        except ValueError as exc:
+            messagebox.showerror("No se pudo confirmar la venta", str(exc), parent=self)
+            self.on_sale()
+            return
+
+        self.cart = {
+            item["product_id"]: {
+                "product_id": item["product_id"],
+                "name": item["name"],
+                "price_cents": item["price_cents"],
+                "quantity": item["quantity"],
+            }
+            for item in preview
+        }
+        self.refresh_cart()
+        total = sum(item["subtotal_cents"] for item in preview)
         if not messagebox.askyesno(
             "Confirmar venta", f"¿Registrar la venta por {format_currency(total)}?", parent=self
         ):
@@ -183,4 +207,3 @@ class PosView(ttk.Frame):
         self.cart.clear()
         self.on_sale()
         messagebox.showinfo("Venta registrada", f"Venta N.º {sale_id} guardada correctamente.", parent=self)
-
