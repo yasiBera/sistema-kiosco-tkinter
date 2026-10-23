@@ -34,15 +34,32 @@ class PosView(ttk.Frame):
         content.rowconfigure(1, weight=1)
 
         self.search_var = tk.StringVar()
-        search_area = ttk.Frame(content)
+        search_area = ttk.Frame(content, padding=12)
         search_area.grid(row=0, column=0, sticky="ew", padx=(0, 12), pady=(0, 8))
-        ttk.Label(search_area, text="Buscar por nombre o código:").pack(side="left")
+        search_area.columnconfigure(1, weight=1)
+        ttk.Label(search_area, text="Buscar productos", style="Field.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(search_area, text="Nombre o código", foreground=COLORS["muted"]).grid(
+            row=1, column=0, sticky="w", pady=(2, 0)
+        )
         search = ttk.Entry(search_area, textvariable=self.search_var)
-        search.pack(side="left", fill="x", expand=True, padx=8)
+        search.grid(row=0, column=1, rowspan=2, sticky="ew", padx=(12, 0))
         search.bind("<KeyRelease>", lambda _event: self.refresh_products())
+        search.focus_set()
 
+        product_panel = ttk.Frame(content, padding=12)
+        product_panel.grid(row=1, column=0, sticky="nsew", padx=(0, 12))
+        product_panel.columnconfigure(0, weight=1)
+        product_panel.rowconfigure(1, weight=1)
+        ttk.Label(product_panel, text="Productos disponibles", style="Section.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(product_panel, text="Hacé doble clic para agregar", foreground=COLORS["muted"]).grid(
+            row=1, column=0, sticky="w", padx=(0, 0), pady=(2, 8)
+        )
         self.product_tree = ttk.Treeview(
-            content, columns=("name", "price", "stock"), show="headings", selectmode="browse"
+            product_panel, columns=("name", "price", "stock"), show="headings", selectmode="browse"
         )
         self.product_tree.heading("name", text="Producto")
         self.product_tree.heading("price", text="Precio")
@@ -50,10 +67,10 @@ class PosView(ttk.Frame):
         self.product_tree.column("name", width=300)
         self.product_tree.column("price", width=110, anchor="center")
         self.product_tree.column("stock", width=70, anchor="center")
-        self.product_tree.grid(row=1, column=0, sticky="nsew", padx=(0, 12))
+        self.product_tree.grid(row=2, column=0, sticky="nsew")
         self.product_tree.bind("<Double-1>", lambda _event: self.add_selected())
-        ttk.Button(content, text="Agregar al carrito", style="Primary.TButton",
-                   command=self.add_selected).grid(row=2, column=0, sticky="e", padx=(0, 12), pady=10)
+        ttk.Button(product_panel, text="Agregar al carrito", style="Primary.TButton",
+                   command=self.add_selected).grid(row=3, column=0, sticky="e", pady=(10, 0))
 
         cart_panel = tk.Frame(content, bg=COLORS["white"], highlightthickness=1,
                               highlightbackground="#E4E9F1")
@@ -61,7 +78,11 @@ class PosView(ttk.Frame):
         cart_panel.rowconfigure(1, weight=1)
         cart_panel.columnconfigure(0, weight=1)
         tk.Label(cart_panel, text="Venta actual", bg=COLORS["white"], fg=COLORS["text"],
-                 font=("Segoe UI", 15, "bold")).grid(row=0, column=0, sticky="w", padx=16, pady=14)
+                 font=("Segoe UI", 15, "bold")).grid(row=0, column=0, sticky="w", padx=16, pady=(14, 8))
+        tk.Label(cart_panel, text="Productos seleccionados", bg=COLORS["white"],
+                 fg=COLORS["muted"], font=("Segoe UI", 9, "bold")).grid(
+                     row=1, column=0, sticky="w", padx=16, pady=(0, 8)
+                 )
 
         self.cart_tree = ttk.Treeview(
             cart_panel, columns=("name", "qty", "subtotal"), show="headings", selectmode="browse"
@@ -72,18 +93,18 @@ class PosView(ttk.Frame):
         self.cart_tree.column("name", width=190)
         self.cart_tree.column("qty", width=55, anchor="center")
         self.cart_tree.column("subtotal", width=100, anchor="e")
-        self.cart_tree.grid(row=1, column=0, sticky="nsew", padx=12)
+        self.cart_tree.grid(row=2, column=0, sticky="nsew", padx=12)
 
         cart_actions = ttk.Frame(cart_panel)
-        cart_actions.grid(row=2, column=0, sticky="ew", padx=12, pady=8)
-        ttk.Button(cart_actions, text="− 1", command=self.decrease_selected).pack(side="left")
-        ttk.Button(cart_actions, text="Vaciar", command=self.clear_cart).pack(side="right")
+        cart_actions.grid(row=3, column=0, sticky="ew", padx=12, pady=8)
+        ttk.Button(cart_actions, text="Quitar 1", command=self.decrease_selected).pack(side="left")
+        ttk.Button(cart_actions, text="Vaciar carrito", command=self.clear_cart).pack(side="right")
 
         self.total_label = tk.Label(cart_panel, text="TOTAL  $ 0,00", bg=COLORS["navy"],
                                     fg=COLORS["white"], font=("Segoe UI", 18, "bold"), pady=14)
-        self.total_label.grid(row=3, column=0, sticky="ew")
+        self.total_label.grid(row=4, column=0, sticky="ew")
         ttk.Button(cart_panel, text="CONFIRMAR VENTA", style="Primary.TButton",
-                   command=self.finish_sale).grid(row=4, column=0, sticky="ew", padx=12, pady=12)
+                   command=self.finish_sale).grid(row=5, column=0, sticky="ew", padx=12, pady=12)
 
     def refresh(self) -> None:
         self.refresh_products()
