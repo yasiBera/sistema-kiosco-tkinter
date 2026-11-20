@@ -47,6 +47,18 @@ def configure_styles(root) -> None:
         font=("Segoe UI", 22, "bold"),
     )
     style.configure(
+        "Section.TLabel",
+        background=COLORS["white"],
+        foreground=COLORS["text"],
+        font=("Segoe UI", 12, "bold"),
+    )
+    style.configure(
+        "Field.TLabel",
+        background=COLORS["white"],
+        foreground=COLORS["muted"],
+        font=("Segoe UI", 9, "bold"),
+    )
+    style.configure(
         "Primary.TButton",
         background=COLORS["blue"],
         foreground=COLORS["white"],

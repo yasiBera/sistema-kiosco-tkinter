@@ -93,37 +93,53 @@ class SaleRepository:
     def __init__(self, database: Database):
         self.database = database
 
-    def create(self, items: Iterable[dict]) -> int:
-        normalized = [dict(item) for item in items]
-        if not normalized:
+    @staticmethod
+    def _prepare_items(connection, items: list[dict]) -> list[dict]:
+        if not items:
             raise ValueError("La venta no tiene productos.")
 
+        checked_items = []
+        for item in items:
+            quantity = item.get("quantity")
+            if type(quantity) is not int or quantity <= 0:
+                raise ValueError("La cantidad debe ser un número entero mayor que cero.")
+
+            product = connection.execute(
+                """
+                SELECT id, name, price_cents, stock, active
+                FROM products WHERE id = ?
+                """,
+                (item.get("product_id"),),
+            ).fetchone()
+            if product is None or not product["active"]:
+                raise ValueError("Uno de los productos ya no está disponible.")
+            if product["stock"] < quantity:
+                raise ValueError(
+                    f"Stock insuficiente para {product['name']}. "
+                    f"Disponible: {product['stock']}."
+                )
+
+            checked_items.append(
+                {
+                    "product_id": product["id"],
+                    "name": product["name"],
+                    "price_cents": product["price_cents"],
+                    "quantity": quantity,
+                    "subtotal_cents": product["price_cents"] * quantity,
+                }
+            )
+        return checked_items
+
+    def preview(self, items: Iterable[dict]) -> list[dict]:
+        normalized = [dict(item) for item in items]
+        with self.database.read() as connection:
+            return self._prepare_items(connection, normalized)
+
+    def create(self, items: Iterable[dict]) -> int:
+        normalized = [dict(item) for item in items]
         with self.database.transaction() as connection:
-            total_cents = 0
-            checked_items = []
-            for item in normalized:
-                product = connection.execute(
-                    """
-                    SELECT id, name, price_cents, stock, active
-                    FROM products WHERE id = ?
-                    """,
-                    (item["product_id"],),
-                ).fetchone()
-                if product is None or not product["active"]:
-                    raise ValueError("Uno de los productos ya no está disponible.")
-
-                quantity = int(item["quantity"])
-                if quantity <= 0:
-                    raise ValueError("La cantidad debe ser mayor que cero.")
-                if product["stock"] < quantity:
-                    raise ValueError(
-                        f"Stock insuficiente para {product['name']}. "
-                        f"Disponible: {product['stock']}."
-                    )
-
-                subtotal = product["price_cents"] * quantity
-                total_cents += subtotal
-                checked_items.append((product, quantity, subtotal))
+            checked_items = self._prepare_items(connection, normalized)
+            total_cents = sum(item["subtotal_cents"] for item in checked_items)
 
             cursor = connection.execute(
                 "INSERT INTO sales(created_at, total_cents) VALUES (?, ?)",
@@ -131,7 +147,7 @@ class SaleRepository:
             )
             sale_id = int(cursor.lastrowid)
 
-            for product, quantity, subtotal in checked_items:
+            for item in checked_items:
                 connection.execute(
                     """
                     INSERT INTO sale_items(
@@ -141,16 +157,16 @@ class SaleRepository:
                     """,
                     (
                         sale_id,
-                        product["id"],
-                        product["name"],
-                        quantity,
-                        product["price_cents"],
-                        subtotal,
+                        item["product_id"],
+                        item["name"],
+                        item["quantity"],
+                        item["price_cents"],
+                        item["subtotal_cents"],
                     ),
                 )
                 connection.execute(
                     "UPDATE products SET stock = stock - ? WHERE id = ?",
-                    (quantity, product["id"]),
+                    (item["quantity"], item["product_id"]),
                 )
             return sale_id
 
